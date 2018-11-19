@@ -69,7 +69,6 @@ m_supply=(
     LNS 1000000000
     KEPL 200000000
     INTU 1000000000
-    XAT 21000000000
     XPP 18400000
     XNV 18400000
     BLUR 9223300
@@ -87,7 +86,7 @@ coin_name=(
     GRFT  graft
     TUBE  bittube
     XHV   haven+protocol
-    XHF   freehaven
+    XFH   freehaven
     LOKI  loki
     TRTL  turtle
     XTL   stellite
@@ -119,7 +118,6 @@ coin_name=(
     LNS lines
     KEPL kepl
     INTU intucoin
-    XAT catalyst
     XPP privatepay
     XNV nerva
     BLUR blur
@@ -170,7 +168,6 @@ coin_algo=(
     LNS cn
     KEPL cn-fast
     INTU cn-lite
-    XAT cn
     XPP cn-fast
     XNV cn-adap
     BLUR cn-adap
@@ -226,7 +223,8 @@ coin_rewards_pools() {
     hashr=${algo_hash[$algo]}
 
     fetch_data(){
-        data=$(curl -k --compressed -s -X GET "$pool_url")
+        data=$(timeout 15 curl -k --compressed -s -X GET "$pool_url")
+        [ -z "$data" ] && { echo "problems with: $pool_url"; return 1; }
         net_diff=$(echo "$data" | jq '.network.difficulty')
         block_time=$(echo "$data" | jq '.config.coinDifficultyTarget')
         net_hash=$(qalc -t "$net_diff / $block_time")
@@ -239,7 +237,7 @@ coin_rewards_pools() {
             pool_url="http://xlc.crypto-coins.club:8118/live_stats"
             ;;
         "RECL")
-            pool_url="https://recoal.herominers.com/api/live_stats"
+            pool_url="https://api.getpool.org/rpc/recl/live_stats"
             ;;
         "CCX")
             pool_url="https://conceal.herominers.com/api/live_stats"
@@ -257,7 +255,7 @@ coin_rewards_pools() {
             pool_url="https://mkt.ciapool.com/api/live_stats"
             ;;
         "ETNC")
-            pool_url="http://etnc.baikalmine.com:9869/stats"
+            pool_url="http://207.180.227.127:8119/live_stats"
             ;;
         "TOKL")
             pool_url="http://51.38.184.159:8118/live_stats"
@@ -268,17 +266,16 @@ coin_rewards_pools() {
         "INTU")
             pool_url="http://pool.intucoin.com:8117/live_stats"
             ;;
-        "XAT")
-            pool_url="https://pool.catalyst.cash:8119/stats"
-            ;;
         "XPP")
             pool_url="https://privatepay.herominers.com/api/live_stats"
             ;;
         "XNV")
             pool_url=""
-            net_hash=$(curl -s -X GET "https://api.getnerva.org/gethashrate.php")
-            reward_units=$(curl -s -X GET "https://api.getnerva.org/getreward.php")
-            block_time=$(curl -s -X GET "https://api.getnerva.org/getinfo.php" | jq '.target')
+            local getinfo=$(curl -s -X GET "https://api.getnerva.org/getinfo.php")
+            local difficulty=$(echo "$getinfo" | jq '.result.difficulty')
+            block_time=$(echo "$getinfo" | jq '.target')
+            net_hash=$(qalc -t "$difficulty / $block_time")
+            reward_units=$(curl -s -X GET "https://api.getnerva.org/getlastblockheader.php" | jq '.result.block_header.reward')
             ;;
         "BLUR")
             pool_url=""
@@ -321,7 +318,7 @@ coin_rewards_pools() {
     esac
     if [ -n "$pool_url" ]; then
         ## get the data from the pool
-        fetch_data
+        fetch_data || return
         ## get block reward
         coin_units=$(echo "$data" | jq '.config.coinUnits')
         reward_units=$(echo "$data" | jq '.lastblock.reward')
@@ -356,7 +353,7 @@ reward_factor(){
     [ -z "$cr" ] && echo "error fetching coins reward for $1" && exit 1
     str="$cr / ${m_supply[$1]} * 1000000"
     factor=$(qalc -t "$str")
-    [ -n "$factor" ] && echo "$1 ${coin_algo[$1]} $factor" 
+    [ -n "$factor" ] && echo "${coin_algo[$1]} $factor" 
     cr=
 }
 
@@ -365,11 +362,11 @@ if [ "$SHLVL" -gt 1 -a -n "$1" ]; then
     reward_factor $1
 else
     for k in ${(@k)coin_name};do
-        if [ "$k" != "BLUR" ]; then
+        if [[ ! "$k" =~ "BLUR|FRTY" ]]; then
+            echo -n "$k "
             coin_data
             reward_factor $k
         fi
     done
     wait
 fi
-
